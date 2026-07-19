@@ -73,19 +73,17 @@ abstract class Zaimanhua :
         var hasTriedLogin = false
         val url = request.url.toString()
 
-        if (url.contains(tryLoginRegex) && request.header("authorization") == null && username.isNotBlank() && password.isNotBlank()) {
+        if (url.contains(tryLoginRegex) && username.isNotBlank() && password.isNotBlank() &&
+            (request.header("authorization") == null || tokenNeedsRefresh(token))
+        ) {
             token = getToken(username, password)
             apiHeaders = apiHeaders.newBuilder().setToken(token).build()
             hasTriedLogin = true
-            preferences.edit().apply {
-                if (token.isBlank()) {
-                    putString(TOKEN_PREF, "")
-                    putString(USERNAME_PREF, "")
-                    putString(PASSWORD_PREF, "").apply()
-                } else {
-                    putString(TOKEN_PREF, token).apply()
-                    request = request.newBuilder().headers(apiHeaders).build()
-                }
+            // 登录失败(token 为空)时只更新 token，保留账号密码以便下次自动重登，
+            // 避免被其他设备/IP 挤下线后，因一次重登失败就把账号密码清空、需要手动重填
+            preferences.edit().putString(TOKEN_PREF, token).apply()
+            if (token.isNotBlank()) {
+                request = request.newBuilder().headers(apiHeaders).build()
             }
         }
         val response = chain.proceed(request)
@@ -102,15 +100,8 @@ abstract class Zaimanhua :
         if (!isValid(token) && !hasTriedLogin) {
             token = getToken(username, password)
             apiHeaders = apiHeaders.newBuilder().setToken(token).build()
-            preferences.edit().apply {
-                if (token.isBlank()) {
-                    putString(TOKEN_PREF, "")
-                    putString(USERNAME_PREF, "")
-                    putString(PASSWORD_PREF, "")
-                } else {
-                    putString(TOKEN_PREF, token)
-                }
-            }.apply()
+            // 登录失败(token 为空)时只更新 token，保留账号密码以便下次自动重登
+            preferences.edit().putString(TOKEN_PREF, token).apply()
             if (token.isBlank()) return response
         } else if (request.header("authorization") == "Bearer $token") {
             return response
@@ -130,7 +121,20 @@ abstract class Zaimanhua :
 
     private var apiHeaders = headersBuilder().setToken(preferences.getString(TOKEN_PREF, "")!!).build()
 
-    private fun isValid(token: String): Boolean {
+    private var lastTokenCheckAt: Long = 0L
+
+    // 被其他设备/IP 挤下线后，token 在服务端已失效但本地 JWT 尚未过期。
+    // 因此在浏览/详情/搜索等请求前也做一次(限流的)服务端有效性校验，失效则自动重登，
+    // 使 A 设备重新打开扩展时也能恢复登录、显示需要登录才可见的漫画。
+    private fun tokenNeedsRefresh(token: String): Boolean {
+        if (token.isBlank()) return true
+        val now = System.currentTimeMillis()
+        if (now - lastTokenCheckAt < TOKEN_RECHECK_INTERVAL_MS) return false
+        lastTokenCheckAt = now
+        return runCatching { !isValid(token, CacheControl.FORCE_NETWORK) }.getOrDefault(true)
+    }
+
+    private fun isValid(token: String, cache: CacheControl = USE_CACHE): Boolean {
         if (token.isBlank()) return false
         val parts = token.split(".")
         if (parts.size != 3) throw Exception("token格式错误，不符合JWT规范")
@@ -141,7 +145,7 @@ abstract class Zaimanhua :
             GET(
                 "$accountApiUrl/userInfo/get",
                 headersBuilder().setToken(token).build(),
-                cache = USE_CACHE,
+                cache = cache,
             ),
         ).execute().parseAs<SimpleResponseDto>()
         return response.errno == 0
@@ -347,6 +351,7 @@ abstract class Zaimanhua :
 
     companion object {
         val USE_CACHE = CacheControl.Builder().maxStale(170.seconds).build()
+        const val TOKEN_RECHECK_INTERVAL_MS = 15_000L
         const val USERNAME_PREF = "USERNAME"
         const val PASSWORD_PREF = "PASSWORD"
         const val TOKEN_PREF = "TOKEN"
