@@ -9,7 +9,7 @@ on:
       - '.github/workflows/build-zaimanhua.yml'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -33,9 +33,17 @@ jobs:
       - name: Build Zaimanhua debug APK
         run: ./gradlew :src:zh:zaimanhua:assembleDebug --stacktrace
 
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: zaimanhua-debug-apk
-          path: '**/build/outputs/apk/debug/*.apk'
-          if-no-files-found: error
+      - name: Publish raw APK as release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          APK=$(find . -path '*/build/outputs/apk/debug/*.apk' | head -n 1)
+          test -n "$APK" || { echo "APK not found"; exit 1; }
+          echo "Found APK: $APK"
+          cp "$APK" zaimanhua.apk
+          if gh release view apk -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload apk zaimanhua.apk --clobber -R "$GITHUB_REPOSITORY"
+          else
+            gh release create apk zaimanhua.apk -R "$GITHUB_REPOSITORY" --target zaimanhua --title "Zaimanhua debug APK" --notes "自动构建的 debug 签名 APK（分支 zaimanhua）。直接下载 zaimanhua.apk 安装，无需解压。"
+          fi
