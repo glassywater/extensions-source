@@ -77,15 +77,11 @@ abstract class Zaimanhua :
             token = getToken(username, password)
             apiHeaders = apiHeaders.newBuilder().setToken(token).build()
             hasTriedLogin = true
-            preferences.edit().apply {
-                if (token.isBlank()) {
-                    putString(TOKEN_PREF, "")
-                    putString(USERNAME_PREF, "")
-                    putString(PASSWORD_PREF, "").apply()
-                } else {
-                    putString(TOKEN_PREF, token).apply()
-                    request = request.newBuilder().headers(apiHeaders).build()
-                }
+            // 登录失败(token 为空)时只更新 token，保留账号密码以便下次自动重登，
+            // 避免被其他设备/IP 挤下线后，因一次重登失败就把账号密码清空、需要手动重填
+            preferences.edit().putString(TOKEN_PREF, token).apply()
+            if (token.isNotBlank()) {
+                request = request.newBuilder().headers(apiHeaders).build()
             }
         }
         val response = chain.proceed(request)
@@ -102,15 +98,8 @@ abstract class Zaimanhua :
         if (!isValid(token) && !hasTriedLogin) {
             token = getToken(username, password)
             apiHeaders = apiHeaders.newBuilder().setToken(token).build()
-            preferences.edit().apply {
-                if (token.isBlank()) {
-                    putString(TOKEN_PREF, "")
-                    putString(USERNAME_PREF, "")
-                    putString(PASSWORD_PREF, "")
-                } else {
-                    putString(TOKEN_PREF, token)
-                }
-            }.apply()
+            // 登录失败(token 为空)时只更新 token，保留账号密码以便下次自动重登
+            preferences.edit().putString(TOKEN_PREF, token).apply()
             if (token.isBlank()) return response
         } else if (request.header("authorization") == "Bearer $token") {
             return response
