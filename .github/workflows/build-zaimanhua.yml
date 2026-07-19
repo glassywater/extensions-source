@@ -1,0 +1,48 @@
+name: Build Zaimanhua
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [zaimanhua]
+    paths:
+      - 'src/zh/zaimanhua/**'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Java
+        uses: actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a # v5.5.0
+        with:
+          java-version: 17
+          distribution: temurin
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+
+      - name: Build Zaimanhua debug APK
+        run: ./gradlew :src:zh:zaimanhua:assembleDebug --stacktrace
+
+      - name: Publish raw APK as release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          APK=$(find . -path '*/build/outputs/apk/debug/*.apk' | head -n 1)
+          test -n "$APK" || { echo "APK not found"; exit 1; }
+          echo "Found APK: $APK"
+          cp "$APK" zaimanhua.apk
+          if gh release view apk -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload apk zaimanhua.apk --clobber -R "$GITHUB_REPOSITORY"
+          else
+            gh release create apk zaimanhua.apk -R "$GITHUB_REPOSITORY" --target zaimanhua --title "Zaimanhua debug APK" --notes "自动构建的 debug 签名 APK（分支 zaimanhua）。直接下载 zaimanhua.apk 安装，无需解压。"
+          fi
