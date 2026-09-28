@@ -6,13 +6,13 @@ plugins {
 
 keiyoushi {
     name = "Read Chainsaw Man Manga Online"
-    versionCode = 2
+    versionCode = 0
     contentWarning = ContentWarning.NSFW
-    libVersion = "1.4"
+    libVersion = "1.6"
     theme = "mangacatalog"
 
     source {
         lang = "en"
-        baseUrl = "https://ww5.readchainsawman.com"
+        baseUrl = "https://ww6.readchainsawman.com"
     }
 }

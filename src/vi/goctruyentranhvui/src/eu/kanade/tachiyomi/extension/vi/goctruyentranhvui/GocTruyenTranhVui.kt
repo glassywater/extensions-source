@@ -10,12 +10,12 @@ import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.SMangaUpdate
-import eu.kanade.tachiyomi.util.asJsoup
 import keiyoushi.annotation.Source
 import keiyoushi.network.get
 import keiyoushi.network.post
 import keiyoushi.network.rateLimit
 import keiyoushi.source.KeiSource
+import keiyoushi.utils.asJsoup
 import keiyoushi.utils.getLocalStorage
 import keiyoushi.utils.getPreferences
 import keiyoushi.utils.parseAs
@@ -40,8 +40,12 @@ abstract class GocTruyenTranhVui :
     private val preferences = getPreferences()
 
     override fun OkHttpClient.Builder.configureClient(): OkHttpClient.Builder = apply {
-        rateLimit(3)
         addInterceptor(::authInterceptor)
+        rateLimit(3)
+    }
+
+    override fun Headers.Builder.configureHeaders(): Headers.Builder = apply {
+        removeAll("Origin")
     }
 
     private val xhrHeaders: Headers

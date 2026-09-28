@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.extension.zh.jcomic
 
+import android.util.Base64
 import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
@@ -7,11 +8,11 @@ import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.SMangaUpdate
-import eu.kanade.tachiyomi.util.asJsoup
 import keiyoushi.annotation.Source
 import keiyoushi.network.get
 import keiyoushi.source.KeiSource
-import keiyoushi.utils.long
+import keiyoushi.utils.asJsoup
+import keiyoushi.utils.longOrNull
 import keiyoushi.utils.tryParse
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
@@ -19,6 +20,7 @@ import kotlinx.coroutines.supervisorScope
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import okhttp3.Headers
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Response
@@ -30,11 +32,15 @@ import java.util.Locale
 @Source
 abstract class JComic : KeiSource() {
 
+    override fun Headers.Builder.configureHeaders() = apply {
+        set("Cookie", "jcomic_access=verified_user")
+    }
+
     override fun OkHttpClient.Builder.configureClient() = apply {
         addInterceptor { chain ->
             val origin = chain.request()
             chain.proceed(origin).also {
-                if (it.code == 403 && origin.url.toString().contains("jcomic-content")) {
+                if (it.code == 403 && (origin.url.host.startsWith("images.") || origin.url.toString().contains("jcomic-content"))) {
                     it.close()
                     throw IOException("图片已失效，清除章节缓存后重试\n（链接有效期只有1分钟，建议以后下载完章节再看）")
                 }
@@ -43,7 +49,6 @@ abstract class JComic : KeiSource() {
     }
 
     // Customize
-
     companion object {
         val SIZE_REGEX = Regex("\\((\\d+)\\)")
         val DATE_FORMAT = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.CHINESE)
@@ -110,10 +115,6 @@ abstract class JComic : KeiSource() {
     }
 
     // Manga & Chapter
-    override fun getMangaUrl(manga: SManga) = baseUrl + manga.url
-
-    override fun getChapterUrl(chapter: SChapter) = baseUrl + chapter.url
-
     override suspend fun fetchMangaUpdate(
         manga: SManga,
         chapters: List<SChapter>,
@@ -133,7 +134,7 @@ abstract class JComic : KeiSource() {
 
         val asyncChapters = if (fetchChapters) {
             async {
-                val time = manga.memo["time"]!!.long
+                val time = manga.memo["time"]?.longOrNull ?: 0L
                 if (manga.url.contains("/page")) {
                     listOf(
                         SChapter.create().apply {
@@ -164,7 +165,13 @@ abstract class JComic : KeiSource() {
     override suspend fun getPageList(chapter: SChapter): List<Page> {
         val response = client.get(baseUrl + chapter.url)
         return response.asJsoup().select(".comic-thumb").mapIndexed { i, img ->
-            Page(i, imageUrl = img.attr("src"))
+            val locked = img.attr("data-locked")
+            val url = if (locked.isNotEmpty()) {
+                String(Base64.decode(locked.removePrefix("JCOMIC_TRAP_").reversed(), Base64.NO_WRAP))
+            } else {
+                img.attr("data-src").ifEmpty { img.attr("src") }
+            }
+            Page(i, imageUrl = url)
         }
     }
 }

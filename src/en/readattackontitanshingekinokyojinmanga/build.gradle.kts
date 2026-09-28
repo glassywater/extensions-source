@@ -6,13 +6,13 @@ plugins {
 
 keiyoushi {
     name = "Read Attack on Titan Shingeki no Kyojin Manga"
-    versionCode = 6
+    versionCode = 0
     contentWarning = ContentWarning.SAFE
-    libVersion = "1.4"
+    libVersion = "1.6"
     theme = "mangacatalog"
 
     source {
         lang = "en"
-        baseUrl = "https://ww11.readsnk.com"
+        baseUrl = "https://ww12.readsnk.com"
     }
 }
